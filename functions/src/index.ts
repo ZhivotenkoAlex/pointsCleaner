@@ -34,8 +34,8 @@ export const gazetkiUpdates = onSchedule(
     schedule: "0 0 * * *",
     region: "europe-central2",
     timeZone: "Europe/Warsaw",
-    timeoutSeconds: 900,
-    memory: "1GiB",
+    timeoutSeconds: 1200,
+    memory: "2GiB",
     cpu: 1,
   },
   async () => {
