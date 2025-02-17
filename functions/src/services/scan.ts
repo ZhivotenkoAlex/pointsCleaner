@@ -1,8 +1,9 @@
 import { db } from "../index"
-import puppeteer from "puppeteer"
+import puppeteer from "puppeteer-core"
 import { getStorage } from "firebase-admin/storage"
 import { WriteBatch } from "firebase-admin/firestore"
 import sharp from "sharp"
+import chromium from "chromium"
 
 const { fetch } = globalThis
 
@@ -53,7 +54,21 @@ const originName = "https://www.gazetkipromocyjne.net"
  */
 export async function start() {
   console.time("Duration")
-  const browser = await puppeteer.launch({ headless: true })
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: chromium.path,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--single-process",
+      "--disable-gpu",
+      "--no-zygote",
+      "--disable-software-rasterizer",
+      "--disable-extensions",
+    ],
+  })
   const page = await browser.newPage()
   await page.goto(url)
   await page.setViewport({ width: 1080, height: 1024 })
@@ -288,6 +303,7 @@ export async function saveToFirebase(
                 item.supplier_id as string,
                 [{ image: page.image, number: page.number }],
                 item.urlname as string,
+                item.origin_id as string,
                 batch
               )
             }) || []
@@ -533,12 +549,13 @@ const saveGazetkiPage = async (
   supplier_id: string,
   pages: Array<{ image: string; number: string }>,
   urlname: string,
+  origin_id: string,
   batch: WriteBatch
 ): Promise<GazetkiPageData[]> => {
   try {
     const imageUploads = pages.map((page) => ({
       url: page.image,
-      path: `users/uploads/newspapers/${urlname}/${urlname}/${page.number}.png`,
+      path: `users/uploads/newspapers/${urlname}-${origin_id}/${urlname}/${page.number}.png`,
     }))
 
     const imageUrls = await uploadImageBatch(imageUploads)
@@ -568,6 +585,7 @@ const isGazetkaExists = async (origin_id: string, supplier_id: string) => {
     .collection("gazetki_brochure")
     .where("origin_id", "==", origin_id)
     .where("supplier_id", "==", supplier_id)
+    .where("is_removed", "==", "0")
     .get()
 
   return gazetka.docs.length > 0
