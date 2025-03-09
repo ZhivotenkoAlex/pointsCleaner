@@ -27,6 +27,7 @@ interface BrochureData {
   origin_id: string
   supplier_id?: string
   urlname: string
+  created_at: string
 }
 
 interface GazetkiBcData {
@@ -497,6 +498,7 @@ const saveGazetkiBrochure = async (item: BrochureData, batch: WriteBatch) => {
       description: "",
       end_date: formatDate(item.end_date),
       start_date: formatDate(item.start_date),
+      created_at: new Date().toISOString().split("T")[0],
       image: imageUrl,
       origin_id: item.origin_id,
       is_removed: "0",
