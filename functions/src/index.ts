@@ -31,10 +31,10 @@ app.use("/", scan)
 
 export const gazetkiUpdates = onSchedule(
   {
-    schedule: "0 0 * * *",
+    schedule: "0 1 * * *",
     region: "europe-central2",
     timeZone: "Europe/Warsaw",
-    timeoutSeconds: 1200,
+    timeoutSeconds: 2000,
     memory: "2GiB",
     cpu: 1,
   },

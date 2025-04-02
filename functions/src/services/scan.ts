@@ -1,11 +1,12 @@
 import { db } from "../index"
 import puppeteer from "puppeteer-core"
+import type { Browser } from "puppeteer-core"
 import { getStorage } from "firebase-admin/storage"
 import { WriteBatch } from "firebase-admin/firestore"
 import sharp from "sharp"
 import chromium from "chromium"
 
-const { fetch } = globalThis
+// const { fetch } = globalThis
 
 interface NewspaperData {
   origin_id: string | null
@@ -55,185 +56,203 @@ const originName = "https://www.gazetkipromocyjne.net"
  */
 export async function start() {
   console.time("Duration")
+  let browser: Browser | undefined = undefined
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    executablePath: chromium.path,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--single-process",
-      "--disable-gpu",
-      "--no-zygote",
-      "--disable-software-rasterizer",
-      "--disable-extensions",
-    ],
-  })
-  const page = await browser.newPage()
-  await page.goto(url)
-  await page.setViewport({ width: 1080, height: 1024 })
-  await page.waitForSelector("a")
-  const links = await page.$$eval("a", (elements) =>
-    elements.map((el) => el.href)
-  )
-
-  const sitemapLinks = links.filter((link) => link.includes(originName))
-  const secondLink = sitemapLinks[1]
-
-  await page.goto(secondLink)
-  await page.waitForSelector("a")
-  const brochureLinks = await page.$$eval("a", (elements) =>
-    elements.map((el) => el.href)
-  )
-
-  const filteredBrochureLinks = brochureLinks.filter((link) =>
-    link.includes(originName)
-  )
-
-  const newspapers = {} as { [key: string]: Partial<NewspaperData>[] }
-
-  for (const link of filteredBrochureLinks) {
-    await page.goto(link)
-
-    const hasNewspapersClass = await page.evaluate(() => {
-      return !!document.querySelector(".newspappers")
+  try {
+    console.log("Starting scan...")
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: chromium.path,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-zygote",
+        "--single-process",
+      ],
+      ignoreHTTPSErrors: true,
     })
 
-    if (hasNewspapersClass) {
-      const match = link.match(/\/([^/]+)\/$/)
-      if (!match) continue
+    const page = await browser.newPage()
+    await page.goto(url)
+    await page.setViewport({ width: 1080, height: 1024 })
+    await page.waitForSelector("a")
 
-      const companyName = match[1].replace("gazetka-promocyjna-", "").trim()
-      newspapers[companyName] = []
+    const links = await page.$$eval("a", (elements) =>
+      elements.map((el) => el.href)
+    )
 
-      const newspaperData = await page.$$eval(".newspapper", (elements) => {
-        return elements.map((el) => {
-          const imgElement = el.querySelector(
-            "div.newspapper-img"
-          ) as HTMLElement | null
+    const sitemapLinks = links.filter((link) => link.includes(originName))
+    const secondLink = sitemapLinks[1]
 
-          let imageUrl = ""
+    await page.goto(secondLink)
+    await page.waitForSelector("a")
+    const brochureLinks = await page.$$eval("a", (elements) =>
+      elements.map((el) => el.href)
+    )
 
-          if (imgElement) {
-            const image = imgElement.getAttribute("data-bg") || ""
-            const cleanUrl = image.replace(/&quot;/g, "")
+    const filteredBrochureLinks = brochureLinks.filter((link) =>
+      link.includes(originName)
+    )
 
-            imageUrl = cleanUrl.startsWith("/")
-              ? "https://www.gazetkipromocyjne.net" + cleanUrl
-              : cleanUrl
+    const newspapers = {} as { [key: string]: Partial<NewspaperData>[] }
 
-            if (!imageUrl) {
-              console.error("No valid background image found for newspaper", {
-                element: imgElement.outerHTML,
-              })
-            }
-          } else {
-            console.error("Could not find div.newspapper-img element")
-          }
+    for (const link of filteredBrochureLinks) {
+      await page.goto(link)
 
-          const newspaperId =
-            imgElement?.getAttribute("rel")?.split("#id")[1] || null
-          const footerElement = el.querySelector(".newspapper-footer p")
-          const dateText = footerElement?.textContent || ""
-          const [startDate, endDate] = dateText.split("–").map((d) => d.trim())
-
-          return {
-            origin_id: newspaperId,
-            image: imageUrl,
-            start_date: startDate,
-            end_date: endDate,
-            urlname: "",
-            imageList: [],
-          } as NewspaperData
-        })
+      const hasNewspapersClass = await page.evaluate(() => {
+        return !!document.querySelector(".newspappers")
       })
 
-      const newspapers_elements = await page.$$(".newspapper")
+      if (hasNewspapersClass) {
+        const match = link.match(/\/([^/]+)\/$/)
+        if (!match) continue
 
-      for (let i = 0; i < newspapers_elements.length; i++) {
-        try {
-          await Promise.all([
-            page.waitForNavigation({
-              waitUntil: "networkidle0",
-            }),
-            page.evaluate((index) => {
-              const buttons = document.querySelectorAll(".newspapper-btn")
-              ;(buttons[index] as HTMLElement).click()
-            }, i),
-          ])
+        const companyName = match[1].replace("gazetka-promocyjna-", "").trim()
 
-          await page.waitForSelector("iframe")
+        // if (companyName !== "aldi" && companyName !== "lidl") continue
 
-          const frames = page.frames()
+        newspapers[companyName] = []
 
-          const contentFrame = frames.find((frame) =>
-            frame.url().includes("gazetkipromocyjne.net/wp-content/themes")
-          )
-          if (!contentFrame) {
-            console.error("Could not find content frame")
-            continue
-          }
+        const newspaperData = await page.$$eval(".newspapper", (elements) => {
+          return elements.map((el) => {
+            const imgElement = el.querySelector(
+              "div.newspapper-img"
+            ) as HTMLElement | null
 
-          await contentFrame.waitForSelector("body")
+            let imageUrl = ""
 
-          const imageLinks = await contentFrame.evaluate(() => {
-            const images = document.querySelectorAll("img")
-            return Array.from(images).map((img, index) => ({
-              image:
-                "https://www.gazetkipromocyjne.net" + img.getAttribute("src"),
-              number: String(index + 1),
-            }))
+            if (imgElement) {
+              const image = imgElement.getAttribute("data-bg") || ""
+              const cleanUrl = image.replace(/&quot;/g, "")
+
+              imageUrl = cleanUrl.startsWith("/")
+                ? "https://www.gazetkipromocyjne.net" + cleanUrl
+                : cleanUrl
+            }
+
+            const newspaperId =
+              imgElement?.getAttribute("rel")?.split("#id")[1] || null
+            const footerElement = el.querySelector(".newspapper-footer p")
+            const dateText = footerElement?.textContent || ""
+            const [startDate, endDate] = dateText
+              .split("–")
+              .map((d) => d.trim())
+
+            return {
+              origin_id: newspaperId,
+              image: imageUrl,
+              start_date: startDate,
+              end_date: endDate,
+              urlname: "",
+              imageList: [],
+            } as NewspaperData
           })
+        })
 
-          if (!imageLinks.length) {
-            console.error("No images found on page")
-          }
+        const newspapers_elements = await page.$$(".newspapper")
 
-          const startDate = newspaperData[i]["start_date"]
-          const formattedDate = formatDate(startDate)
-
-          newspaperData[i].urlname =
-            `gazetka-${companyName}-od-${formattedDate}`
-          newspaperData[i].imageList = imageLinks
-
-          await Promise.all([
-            page.waitForNavigation({
-              waitUntil: "networkidle0",
-            }),
-            page.goBack(),
-          ])
-
-          await page.waitForSelector(".newspapper")
-        } catch (navigationError) {
-          console.error(`Navigation error for newspaper ${i}:`, navigationError)
+        for (let i = 0; i < newspapers_elements.length; i++) {
           try {
-            await page.goto(link)
-            await page.waitForSelector(".newspapper")
-          } catch (recoveryError) {
-            console.error(
-              "Failed to recover from navigation error:",
-              recoveryError
+            // Close any existing pages except main
+            const pages = await browser.pages()
+            for (const p of pages) {
+              if (p !== page) await p.close()
+            }
+
+            // Create fresh page for each newspaper
+            const newspaperPage = await browser.newPage()
+            await newspaperPage.goto(link, { waitUntil: "networkidle0" })
+
+            // Click the button on the fresh page
+            await Promise.all([
+              newspaperPage.waitForNavigation({ waitUntil: "networkidle0" }),
+              newspaperPage.evaluate((index) => {
+                const buttons = document.querySelectorAll(".newspapper-btn")
+                if (buttons[index]) {
+                  ;(buttons[index] as HTMLElement).click()
+                }
+              }, i),
+            ])
+
+            // Wait for iframe and get fresh frames list
+            await newspaperPage.waitForSelector("iframe")
+            const frames = newspaperPage.frames()
+            const contentFrame = frames.find((frame) =>
+              frame.url().includes("gazetkipromocyjne.net/wp-content/themes")
             )
+
+            if (!contentFrame) {
+              console.error("Could not find content frame")
+              await newspaperPage.close()
+              continue
+            }
+
+            // Wait for images with longer timeout and check frame URL
+            await contentFrame.waitForSelector("img", { timeout: 30000 })
+            console.log(
+              `Processing newspaper ${i}, frame URL:`,
+              contentFrame.url()
+            )
+
+            const imageLinks = await contentFrame.evaluate(() => {
+              const images = document.querySelectorAll("img")
+              const links = Array.from(images).map((img, index) => ({
+                image: img.getAttribute("src")
+                  ? "https://www.gazetkipromocyjne.net" +
+                    img.getAttribute("src")
+                  : null,
+                number: String(index + 1),
+              }))
+              console.log(`Found ${links.length} images in frame`)
+              return links
+            })
+
+            console.log(`Found ${imageLinks.length} images for newspaper ${i}`)
+
+            const startDate = newspaperData[i]["start_date"]
+            const formattedDate = formatDate(startDate)
+            newspaperData[i].urlname =
+              `gazetka-${companyName}-od-${formattedDate}`
+            newspaperData[i].imageList = imageLinks
+
+            // Close the newspaper page
+            await newspaperPage.close()
+
+            // Add small delay before next iteration
+            await new Promise((r) => setTimeout(r, 1000))
+          } catch (error) {
+            console.error(`Error processing newspaper ${i}:`, error)
+            // Recovery: close any hanging pages
+            const pages = await browser.pages()
+            for (const p of pages) {
+              if (p !== page) await p.close()
+            }
             continue
           }
         }
+
+        newspapers[companyName] = newspaperData
       }
+    }
 
-      console.log(` 'newspapers' is found at: ${link}`)
-
-      newspapers[companyName] = newspaperData
-    } else {
-      console.log(`No 'newspapers' class found at: ${link}`)
+    await browser.close()
+    console.timeEnd("Duration")
+    const results = await saveToFirebase(newspapers)
+    return results
+  } catch (error) {
+    console.error("Browser error:", error)
+    throw error
+  } finally {
+    if (browser) {
+      try {
+        await browser.close()
+      } catch (closeError) {
+        console.error("Error closing browser:", closeError)
+      }
     }
   }
-
-  await browser.close()
-  console.timeEnd("Duration")
-  const results = await saveToFirebase(newspapers)
-  // return newspapers
-
-  return results
 }
 
 interface ChunkResult {
