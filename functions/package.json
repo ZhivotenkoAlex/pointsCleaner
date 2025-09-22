@@ -1,5 +1,5 @@
 {
-  "name": "scan_api",
+  "name": "points_cleaner",
   "scripts": {
     "lint": "eslint --ext .js,.ts .",
     "build": "tsc",
@@ -11,7 +11,7 @@
     "logs": "firebase functions:log"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "lib/index.js",
   "dependencies": {
@@ -23,10 +23,7 @@
     "firebase-admin": "^11.8.0",
     "firebase-functions": "^4.8.0",
     "jsonwebtoken": "^9.0.2",
-    "puppeteer-core": "^22.3.0",
-    "sharp": "^0.33.2",
-    "@google-cloud/functions-framework": "^3.4.5",
-    "chromium": "^3.0.3"
+    "@google-cloud/functions-framework": "^3.4.5"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",

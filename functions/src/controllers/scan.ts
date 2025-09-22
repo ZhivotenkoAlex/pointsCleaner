@@ -1,6 +1,6 @@
 import express from "express"
 import { getError } from "../helpers/timestampToDate"
-import { start } from "../services/scan"
+import { start } from "../services/cleaner"
 
 // eslint-disable-next-line new-cap
 const router = express.Router()
