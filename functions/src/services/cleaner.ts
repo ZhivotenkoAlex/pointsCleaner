@@ -15,7 +15,7 @@ type PersonalHistory = {
 const DAY_MS = 24 * 60 * 60 * 1000
 const getMillis = (d?: FirebaseFirestore.Timestamp | Date): number => {
   if (!d) return Number.NaN
-  const anyD: any = d
+  const anyD = d as any
   if (typeof anyD?.toMillis === "function") return anyD.toMillis()
   return (d as Date).getTime()
 }
@@ -93,7 +93,7 @@ const parseLifetimeDays = (term: unknown): number => {
  * @return {Promise<any>} The bill object or null if not found.
  */
 export async function start() {
-  console.time("Duration")
+  console.log(" starting cleaner")
 
   try {
     const configQuery = await db
@@ -109,7 +109,6 @@ export async function start() {
         lifetimeDays: parseLifetimeDays(data?.points_lifetime_term as unknown),
       }
     })
-    console.log("🚀 ~ start ~ configs:", configs)
 
     const results: Array<{
       company: string
@@ -199,7 +198,10 @@ export async function start() {
         )
 
         const fanUpdates: Record<string, number> = {}
-        for (const [typeId, diff] of Object.entries(expireDiffByType)) {
+        for (const [typeId, diff] of Object.entries(expireDiffByType) as [
+          string,
+          number,
+        ][]) {
           const key = !typeId || typeId === "0" ? "money" : `points_${typeId}`
           const currentVal = Number((fanData as any)[key] ?? 0)
           fanUpdates[key] = currentVal - diff
@@ -302,7 +304,7 @@ export async function start() {
           const fanUpdatesFromNet: Record<string, number> = {}
           for (const [typeId, diff] of Object.entries(netFromPurchases)) {
             const key = !typeId || typeId === "0" ? "money" : `points_${typeId}`
-            const currentVal = Number((fanData as any)[key] ?? 0)
+            const currentVal = Number(fanData[key] ?? 0)
             fanUpdatesFromNet[key] = currentVal + diff // diff is negative
           }
 
@@ -339,11 +341,10 @@ export async function start() {
 
       results.push({ company, cutoff, usersProcessed: userIds.length })
     }
-
+    console.log("🚀 ~ results", results)
     return results
   } catch (error) {
     console.error("Browser error:", error)
     throw error
-  } finally {
   }
 }
